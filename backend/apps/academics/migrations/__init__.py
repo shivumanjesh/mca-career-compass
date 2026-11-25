@@ -1,0 +1,2 @@
+"""Academics migrations package."""
+

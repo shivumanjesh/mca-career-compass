@@ -1,0 +1,3 @@
+registration_no,email,first_name,last_name
+4MT25MC050,valid.csv@mitt.test,Priya,S
+4MT25MC051,bad-email,=CMD(),Risk

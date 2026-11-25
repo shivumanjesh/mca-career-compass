@@ -1,0 +1,23 @@
+[Unit]
+Description=MCA Career Compass Gunicorn Daemon
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=www-data
+WorkingDirectory=__APP_ROOT__/backend
+EnvironmentFile=__APP_ROOT__/.env
+ExecStart=__APP_ROOT__/.venv/bin/gunicorn config.wsgi:application \
+    --workers __GUNICORN_WORKERS__ \
+    --threads __GUNICORN_THREADS__ \
+    --timeout 120 \
+    --bind 127.0.0.1:8000 \
+    --access-logfile - \
+    --error-logfile -
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
