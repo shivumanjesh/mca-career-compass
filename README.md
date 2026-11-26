@@ -104,6 +104,8 @@ npm run build
 ## Documentation Index
 
 - [AGENTS.md](AGENTS.md) — Permanent engineering rules, security boundaries, and phase boundaries
+- [docs/concept-document.md](docs/concept-document.md) — Project Concept Document (vision, measurement separation, lifecycle, and architecture)
+- [docs/user-manual.md](docs/user-manual.md) — Complete User Manual (URLs, demo accounts, role-by-role walkthrough, and 10-step guided tour)
 - [docs/architecture.md](docs/architecture.md) — Multi-institution system architecture
 - [docs/database-schema.md](docs/database-schema.md) — Corrected Phase 1 schema & composite FK design
 - [docs/permissions.md](docs/permissions.md) — Roles and granular permission matrix

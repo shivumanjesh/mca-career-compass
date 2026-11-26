@@ -6,6 +6,8 @@ import type {
   AssessmentDimensionRecord,
   AssessmentTemplateRecord,
   AssessmentVersionDetail,
+  BulkQuestionCommitResponse,
+  BulkQuestionPreviewResponse,
   LifecycleStatus,
   MeasurementFamily,
   QuestionDifficulty,
@@ -159,6 +161,39 @@ export async function updateQuestion(
 ): Promise<QuestionRecord> {
   await ensureCsrfCookie();
   const res = await apiClient.patch<QuestionRecord>(`/assessments/questions/${id}/`, payload);
+  return res.data;
+}
+
+export function getQuestionImportTemplateUrl(format: "xlsx" | "csv"): string {
+  const base = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+  return `${base}/assessments/questions/import-template/?export_format=${format}`;
+}
+
+export async function previewBulkQuestions(file: File): Promise<BulkQuestionPreviewResponse> {
+  await ensureCsrfCookie();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await apiClient.post<BulkQuestionPreviewResponse>(
+    "/assessments/questions/bulk-import/preview/",
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  return res.data;
+}
+
+export async function commitBulkQuestions(
+  file: File,
+  mode: "skip_invalid" | "all_or_nothing",
+): Promise<BulkQuestionCommitResponse> {
+  await ensureCsrfCookie();
+  const form = new FormData();
+  form.append("file", file);
+  form.append("mode", mode);
+  const res = await apiClient.post<BulkQuestionCommitResponse>(
+    "/assessments/questions/bulk-import/commit/",
+    form,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
   return res.data;
 }
 

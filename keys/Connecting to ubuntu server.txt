@@ -1,0 +1,2 @@
+$KEY = "$env:USERPROFILE\Downloads\ssh-key-2026-11-25.key"
+C:\Windows\System32\OpenSSH\ssh.exe -i $KEY ubuntu@140.238.246.25

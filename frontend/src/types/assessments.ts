@@ -95,6 +95,32 @@ export interface QuestionRecord {
   updated_at: string;
 }
 
+export interface BulkQuestionPreviewRow {
+  row_number: number;
+  question_code: string;
+  question_type: string;
+  measurement_family: string;
+  dimension_codes: string[];
+  prompt_preview: string;
+  valid: boolean;
+  errors: string[];
+}
+
+export interface BulkQuestionPreviewResponse {
+  summary: {
+    total_rows: number;
+    valid_count: number;
+    error_count: number;
+  };
+  rows: BulkQuestionPreviewRow[];
+}
+
+export interface BulkQuestionCommitResponse {
+  created_count: number;
+  skipped_count: number;
+  question_codes: string[];
+}
+
 export interface AssessmentVersionSummary {
   id: string;
   version_no: number;

@@ -1,4 +1,5 @@
 """Phase 2 tests: RBAC, measurement-family separation, scoring, immutable versions, and isolation."""
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -221,4 +222,84 @@ class AssessmentAdminPhase2Tests(TestCase):
         self._login("admin", "assessor.b@demob.test", "DEMOB")
         self.assertEqual(self.client.get(f"/api/v1/assessments/questions/{q1_id}/").status_code, 404)
         self.assertEqual(self.client.get(f"/api/v1/assessments/versions/{v1_id}/").status_code, 404)
+
+    def test_bulk_question_import_template_preview_commit_and_guardrails(self):
+        self._login("admin", "assessor.a@mitt.test", "MITT")
+        self.client.post("/api/v1/assessments/seed-catalogue/")
+
+        # Template downloads work for xlsx & csv
+        tpl_xlsx = self.client.get("/api/v1/assessments/questions/import-template/?export_format=xlsx")
+        self.assertEqual(tpl_xlsx.status_code, 200)
+        self.assertIn("spreadsheetml", tpl_xlsx["Content-Type"])
+        self.assertTrue(tpl_xlsx.content.startswith(b"PK"))
+
+        tpl_csv = self.client.get("/api/v1/assessments/questions/import-template/?export_format=csv")
+        self.assertEqual(tpl_csv.status_code, 200)
+        self.assertIn("question_code,question_type", tpl_csv.content.decode("utf-8"))
+
+        # Mixed valid rows (MCQ, True/False, Numeric, Descriptive, Likert) + 1 invalid row (Likert as demonstrated)
+        import csv as _csv
+        import io as _io
+        from apps.assessments.bulk_import import TEMPLATE_HEADERS
+
+        buf = _io.StringIO()
+        w = _csv.writer(buf)
+        w.writerow(TEMPLATE_HEADERS)
+        w.writerow(["BLK_MCQ", "single_mcq", "Which protocol is stateless?", "demonstrated_performance", "PROG", "2", "0.5", "easy", "exact", "HTTP", "FTP", "SMTP", "", "", "A", "", "", "", "web"])
+        w.writerow(["BLK_TF", "true_false", "Stack is LIFO.", "demonstrated_performance", "DSA", "1", "0", "easy", "exact", "", "", "", "", "", "TRUE", "", "", "", "dsa"])
+        w.writerow(["BLK_NUM", "numeric", "Binary of decimal 10?", "demonstrated_performance", "PROG", "2", "0", "medium", "tolerance", "", "", "", "", "", "", "1010", "0", "", "binary"])
+        w.writerow(["BLK_DESC", "descriptive", "Explain ACID properties.", "demonstrated_performance", "DBMS", "5", "0", "medium", "rubric", "", "", "", "", "", "", "", "", "Award 1 mark per property", "dbms"])
+        w.writerow(["BLK_INT", "likert", "Interest in SDE?", "stated_interest", "INT_SDE", "5", "0", "easy", "likert_scale", "", "", "", "", "", "", "", "", "", "interest"])
+        w.writerow(["BLK_BAD", "likert", "Bad measurement family", "demonstrated_performance", "PROG", "5", "0", "easy", "likert_scale", "", "", "", "", "", "", "", "", "", "invalid"])
+        csv_content = buf.getvalue().encode("utf-8")
+
+        preview_res = self.client.post(
+            "/api/v1/assessments/questions/bulk-import/preview/",
+            {"file": SimpleUploadedFile("questions.csv", csv_content, content_type="text/csv")},
+            format="multipart",
+        )
+        self.assertEqual(preview_res.status_code, 200)
+        self.assertEqual(preview_res.data["summary"]["total_rows"], 6)
+        self.assertEqual(preview_res.data["summary"]["valid_count"], 5)
+        self.assertEqual(preview_res.data["summary"]["error_count"], 1)
+        self.assertFalse(preview_res.data["rows"][5]["valid"])
+
+        # all_or_nothing rejects when any error exists
+        abort_res = self.client.post(
+            "/api/v1/assessments/questions/bulk-import/commit/",
+            {"file": SimpleUploadedFile("questions.csv", csv_content, content_type="text/csv"), "mode": "all_or_nothing"},
+            format="multipart",
+        )
+        self.assertEqual(abort_res.status_code, 400)
+
+        # skip_invalid commits all 5 valid questions & emits aggregate audit event
+        commit_res = self.client.post(
+            "/api/v1/assessments/questions/bulk-import/commit/",
+            {"file": SimpleUploadedFile("questions.csv", csv_content, content_type="text/csv"), "mode": "skip_invalid"},
+            format="multipart",
+        )
+        self.assertEqual(commit_res.status_code, 201)
+        self.assertEqual(commit_res.data["created_count"], 5)
+        self.assertEqual(commit_res.data["skipped_count"], 1)
+        self.assertTrue(AuditEvent.objects.filter(institution=self.inst_a, action="QUESTION_BULK_IMPORTED").exists())
+
+        # Invalid extension rejected
+        bad_ext = self.client.post(
+            "/api/v1/assessments/questions/bulk-import/preview/",
+            {"file": SimpleUploadedFile("malware.exe", b"MZ", content_type="application/octet-stream")},
+            format="multipart",
+        )
+        self.assertEqual(bad_ext.status_code, 400)
+
+        # Student denied
+        self._login("academic", "stu.a@mitt.test", "MITT")
+        self.assertEqual(self.client.get("/api/v1/assessments/questions/import-template/").status_code, 403)
+        self.assertEqual(
+            self.client.post(
+                "/api/v1/assessments/questions/bulk-import/preview/",
+                {"file": SimpleUploadedFile("q.csv", csv_content, content_type="text/csv")},
+                format="multipart",
+            ).status_code,
+            403,
+        )
 

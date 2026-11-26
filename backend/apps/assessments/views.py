@@ -1,12 +1,20 @@
 """Phase 2 REST API views for categories, dimensions, question bank, templates, and publishing."""
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import HasAnyPermission, HasInstitutionPermission
+from apps.assessments.bulk_import import (
+    build_question_template_csv,
+    build_question_template_xlsx,
+    commit_question_import,
+    parse_and_validate_question_upload,
+)
 from apps.assessments.models import (
     AssessmentAssignment,
     AssessmentCategory,
@@ -454,4 +462,56 @@ class AssignmentDetailView(APIView):
             request=request,
         )
         return Response(AssessmentAssignmentSerializer(assignment).data)
+
+
+class QuestionImportTemplateView(APIView):
+    """Download sample XLSX or CSV template for bulk question authoring."""
+
+    permission_classes = [HasInstitutionPermission("assessment.question.manage")]
+
+    def get(self, request):
+        fmt = request.query_params.get("export_format", "xlsx").strip().lower()
+        if fmt == "csv":
+            resp = HttpResponse(build_question_template_csv(), content_type="text/csv; charset=utf-8")
+            resp["Content-Disposition"] = 'attachment; filename="question_bank_template.csv"'
+            return resp
+        if fmt == "xlsx":
+            resp = HttpResponse(
+                build_question_template_xlsx(),
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            resp["Content-Disposition"] = 'attachment; filename="question_bank_template.xlsx"'
+            return resp
+        raise ValidationError({"export_format": "Format must be 'xlsx' or 'csv'."})
+
+
+class QuestionBulkImportPreviewView(APIView):
+    """Validate and preview uploaded XLSX/CSV question bank rows before committing."""
+
+    permission_classes = [HasInstitutionPermission("assessment.question.manage")]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        inst = require_active_institution(request)
+        parsed = parse_and_validate_question_upload(institution=inst, uploaded_file=request.FILES.get("file"))
+        return Response({"summary": parsed["summary"], "rows": parsed["rows"]})
+
+
+class QuestionBulkImportCommitView(APIView):
+    """Atomically commit validated XLSX/CSV questions into the active institution Question Bank."""
+
+    permission_classes = [HasInstitutionPermission("assessment.question.manage")]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        inst = require_active_institution(request)
+        mode = request.data.get("mode", "skip_invalid")
+        result = commit_question_import(
+            institution=inst,
+            uploaded_file=request.FILES.get("file"),
+            mode=mode,
+            actor_user=request.user,
+            request=request,
+        )
+        return Response(result, status=status.HTTP_201_CREATED)
 

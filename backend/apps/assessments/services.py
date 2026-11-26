@@ -365,7 +365,7 @@ def _validate_question_scoring_and_dimensions(
 
 
 @transaction.atomic
-def create_question(*, institution: Institution, data: dict, actor_user, request=None) -> Question:
+def create_question(*, institution: Institution, data: dict, actor_user, emit_audit: bool = True, request=None) -> Question:
     norm_code = data["question_code"].strip().upper()
     if Question.objects.filter(institution=institution, question_code__iexact=norm_code).exists():
         raise ValidationError({"question_code": f"Question code '{norm_code}' already exists in this institution."})
@@ -425,20 +425,21 @@ def create_question(*, institution: Institution, data: dict, actor_user, request
     for dim, weight in resolved_dims:
         QuestionDimension.objects.create(question=q, dimension=dim, weight=weight)
 
-    log_audit_event(
-        action="QUESTION_CREATED",
-        entity_type="Question",
-        entity_id=q.id,
-        institution=institution,
-        actor_user=actor_user,
-        after={
-            "question_code": q.question_code,
-            "question_type": q.question_type,
-            "measurement_family": q.measurement_family,
-            "max_marks": str(q.max_marks),
-        },
-        request=request,
-    )
+    if emit_audit:
+        log_audit_event(
+            action="QUESTION_CREATED",
+            entity_type="Question",
+            entity_id=q.id,
+            institution=institution,
+            actor_user=actor_user,
+            after={
+                "question_code": q.question_code,
+                "question_type": q.question_type,
+                "measurement_family": q.measurement_family,
+                "max_marks": str(q.max_marks),
+            },
+            request=request,
+        )
     return q
 
 
